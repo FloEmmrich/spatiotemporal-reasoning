@@ -19,7 +19,7 @@ const int max_size = 10; // maximum column size for grid array
 // FUNCTION PROTOTYPES //
 
 std::string getAxiomType(Axiom);
-void printGrid(Theory[][max_size], int, int, Axiom, Axiom);
+void printGrid(Theory[][max_size], int, int, std::string, std::string);
 
 
 // CLASSES //
@@ -29,7 +29,20 @@ class Axiom {
 		Axiom() {
 			value = "";
 			type = "UNDEF";
-			impulse = 0;
+			impulse[0] = impulse[1] = impulse[2] = impulse[3] = 0;
+			source[0] = source[1] = -1;
+		}
+		Axiom(std::string v, int x, int y) {
+			value = v;
+			type = "UNDEF";
+			type = getAxiomType(*this);
+			if (type == "UNDEF") {
+				std::cerr << "[ERROR] Illegal axiom value: " << v << ".\n";
+				throw 100;
+			}
+			impulse[0] = impulse[1] = impulse[2] = impulse[3] = 1;
+			source[0] = x;
+			source[1] = y;
 		}
 		Axiom(std::string v) {
 			value = v;
@@ -39,15 +52,27 @@ class Axiom {
 				std::cerr << "[ERROR] Illegal axiom value: " << v << ".\n";
 				throw 100;
 			}
-			impulse = 1;
+			impulse[0] = impulse[1] = impulse[2] = impulse[3] = 1;
+			source[0] = -1;
+			source[1] = -1;
 		}
 		void decImpulse(int dir) {
 			if (impulse[dir] > 0) {
 				impulse[dir]--;
 			}
 		}
-		int[4] getImpulse() const {
-			return impulse;
+		void decImpulse() {
+			for (int i = 0; i < 4; i++) {
+				if (impulse[i] > 0) {
+					impulse[i]--;
+				}
+			}
+		}
+		int getImpulse(int dir) const {
+			return impulse[dir];
+		}
+		int getSource(int i) const {
+			return source[i];
 		}
 		std::string getType() const {
 			return type;
@@ -57,7 +82,7 @@ class Axiom {
 		}
 		Axiom negate() {
 			if (type == "PROP") {
-				return Axiom("NOT(" + value + ")");
+				return Axiom("NOT(" + value + ")", source[0], source[1]);
 			} else if (type == "NEG") {
 				std::string v = value;
 				v.erase(v.begin(), v.begin()+4);
@@ -67,10 +92,25 @@ class Axiom {
 				return *this;
 			}
 		}
+		void setImpulse(int n, int e, int s, int w) {
+			impulse[0] = n;
+			impulse[1] = e;
+			impulse[2] = s;
+			impulse[3] = w;
+		}
+		void setSource(int x, int y) {
+			source[0] = x;
+			source[1] = y;
+		}
 		void operator=(const Axiom& r) {
 			value = r.value;
 			type = getAxiomType(value);
-			impulse = r.impulse;
+			impulse[0] = r.impulse[0];
+			impulse[1] = r.impulse[1];
+			impulse[2] = r.impulse[2];
+			impulse[3] = r.impulse[3];
+			source[0] = r.source[0];
+			source[1] = r.source[1];
 		}
 		friend bool operator==(const Axiom& l, const Axiom& r) {
 			return l.value == r.value;
@@ -83,20 +123,36 @@ class Axiom {
 		std::string value;
 		std::string type;
 		int impulse[4];
+		int source[2];
 };
 
 class Theory {
 	public:
 		Theory() {
+			bBoundary = 0;
 			axioms = std::set<Axiom>();
 		}
 		Theory(std::set<Axiom> a) {
 			axioms = a;
+			for (Axiom b : axioms) {
+				if (b.getType() == "BOUND") {
+					bBoundary = 1;
+					break;
+				}
+			}
 		}
 		void addAxiom(Axiom a) {
-			axioms.insert(a);
+			if (!bBoundary) {
+				axioms.insert(a);
+				if (a.getType() == "BOUND") {
+					bBoundary = 1;
+				}
+			}
 		}
-		bool is_inconsistent() {
+		bool is_boundary() const {
+			return bBoundary;
+		}
+		bool is_inconsistent() const {
 			std::set<Axiom> rest = axioms;
 			for (Axiom ax1 : axioms) {
 				rest.erase(ax1);
@@ -115,10 +171,14 @@ class Theory {
 			}
 			return ax;
 		}
-		std::set<Axiom> getAxiomSet() {
+		std::set<Axiom> getAxiomSet() const {
 			return axioms;
 		}
+		void removeAxiom(Axiom a) {
+			axioms.erase(a);
+		}
 	private:
+		bool bBoundary;
 		std::set<Axiom> axioms;
 };
 
@@ -157,7 +217,7 @@ int main() {
 	int x, y;
 	std::string prop;
 	while (File >> x >> y >> prop) {
-		grid[x][y].addAxiom(Axiom(prop));
+		grid[x][y].addAxiom(Axiom(prop, x, y));
 	}
 	
 	File.close();
@@ -166,7 +226,7 @@ int main() {
 	//grid[n/2][m/2].addAxiom(phi);
 	
 	std::cout << "\nInit:\n";
-	printGrid(grid, n, m, Axiom("psi"), Axiom("NOT(psi)"));
+	printGrid(grid, n, m, "psi", "NOT(psi)");
 	
 	Theory newGrid[n][max_size];
 	for (int i = 0; i < n; i++) {
@@ -175,60 +235,139 @@ int main() {
 		}
 	}
 	
+	Axiom ax;
 	std::set<Axiom> axioms;
+	std::set<Axiom> neighborAxioms;
 	std::queue<int> inconsistent;
-	Axiom pulseAxiom;
+	bool bContained;
 	for (int k = 1; k <= steps; k++) {
 		std::cout << "Step " << k << ":\n";
-		for (int i = 1; i < n-1; i++) {
-			for (int j = 1; j < m-1; j++) {
-				if (grid[i][j].is_inconsistent()) {
-					inconsistent.push(i);
-					inconsistent.push(j);
+		for (int j = 1; j < m-1; j++) {
+			for (int i = 1; i < n-1; i++) {
+				if (grid[i][j].is_boundary()) {
 					continue;
 				}
+				
 				axioms = grid[i][j].getAxiomSet();
 				for (Axiom a : axioms) {
-					if (a.getType() != "BOUND") { // TODO: manage impulse
-						newGrid[i+1][j].addAxiom(a);
-						newGrid[i-1][j].addAxiom(a);
-						newGrid[i][j+1].addAxiom(a);
-						newGrid[i][j-1].addAxiom(a);
-						a.decImpulse();
+					if (!newGrid[i+1][j].is_boundary() && a.getImpulse(1) > 0) {
+						neighborAxioms = newGrid[i+1][j].getAxiomSet();
+						ax = a;
+						bContained = 0;
+						for (Axiom b : neighborAxioms) {
+							if (b == a) {
+								newGrid[i+1][j].removeAxiom(b);
+								if (b.getSource(0) == a.getSource(0) && b.getSource(1) == a.getSource(1)) {
+									ax.decImpulse(3);
+								} else {
+									ax.setImpulse(1,1,1,1);
+								}
+								bContained = 1;
+								break;
+							}
+						}
+						if (!bContained) {
+							ax.decImpulse(3);
+						}
+						newGrid[i+1][j].addAxiom(ax);
 					}
+					
+					if (!newGrid[i-1][j].is_boundary() && a.getImpulse(3) > 0) {
+						neighborAxioms = newGrid[i-1][j].getAxiomSet();
+						ax = a;
+						bContained = 0;
+						for (Axiom b : neighborAxioms) {
+							if (b == a) {
+								newGrid[i-1][j].removeAxiom(b);
+								if (b.getSource(0) == a.getSource(0) && b.getSource(1) == a.getSource(1)) {
+									ax.decImpulse(1);
+								} else {
+									ax.setImpulse(1,1,1,1);
+								}
+								bContained = 1;
+								break;
+							}
+						}
+						if (!bContained) {
+							ax.decImpulse(1);
+						}
+						newGrid[i-1][j].addAxiom(ax);
+					}
+					
+					if (!newGrid[i][j+1].is_boundary() && a.getImpulse(0) > 0) {
+						neighborAxioms = newGrid[i][j+1].getAxiomSet();
+						ax = a;
+						bContained = 0;
+						for (Axiom b : neighborAxioms) {
+							if (b == a) {
+								newGrid[i][j+1].removeAxiom(b);
+								if (b.getSource(0) == a.getSource(0) && b.getSource(1) == a.getSource(1)) {
+									ax.decImpulse(2);
+								} else {
+									ax.setImpulse(1,1,1,1);
+								}
+								bContained = 1;
+								break;
+							}
+						}
+						if (!bContained) {
+							ax.decImpulse(2);
+						}
+						newGrid[i][j+1].addAxiom(ax);
+					}
+					
+					if (!newGrid[i][j-1].is_boundary() && a.getImpulse(2) > 0) {
+						neighborAxioms = newGrid[i][j-1].getAxiomSet();
+						ax = a;
+						bContained = 0;
+						for (Axiom b : neighborAxioms) {
+							if (b == a) {
+								newGrid[i][j-1].removeAxiom(b);
+								if (b.getSource(0) == a.getSource(0) && b.getSource(1) == a.getSource(1)) {
+									ax.decImpulse(0);
+								} else {
+									ax.setImpulse(1,1,1,1);
+								}
+								bContained = 1;
+								break;
+							}
+						}
+						if (!bContained) {
+							ax.decImpulse(0);
+						}
+						newGrid[i][j-1].addAxiom(ax);
+					}
+					
+					// decrease impulse
+					ax = a;
+					ax.decImpulse();
+					newGrid[i][j].removeAxiom(a);
+					newGrid[i][j].addAxiom(ax);
 				}
-				grid[i][j] = Theory(axioms);
 			}
 		}
 		
-		int x;
-		while (!inconsistent.empty()) {
-			x = inconsistent.front();
-			inconsistent.pop();
-			newGrid[x][inconsistent.front()] = Theory();
-			inconsistent.pop();
+		for (int j = 1; j < m-1; j++) {
+			for (int i = 1; i < n-1; i++) {
+				if (newGrid[i][j].is_inconsistent()) {
+					newGrid[i][j] = Theory();
+				}
+			}
 		}
 		
-		printGrid(newGrid, n, m, Axiom("psi"), Axiom("NOT(psi)"));
+		printGrid(newGrid, n, m, "psi", "NOT(psi)");
 		
-		axioms = newGrid[5][4].getAxiomSet();
-		std::cout << "[INFO] (5,4) ";
-		for (Axiom a : axioms) {
-			std::cout << a.getValue() << ":" << a.getImpulse() << "; ";
-		}
-		std::cout << std::endl;
-		axioms = newGrid[4][4].getAxiomSet();
-		std::cout << "[INFO] (4,4) ";
-		for (Axiom a : axioms) {
-			std::cout << a.getValue() << ":" << a.getImpulse() << "; ";
-		}
-		std::cout << std::endl;
-		axioms = newGrid[2][2].getAxiomSet();
-		std::cout << "[INFO] (2,2) ";
-		for (Axiom a : axioms) {
-			std::cout << a.getValue() << ":" << a.getImpulse() << "; ";
-		}
-		std::cout << std::endl;
+		/*for (int j = 1; j < m-1; j++) {
+			for (int i = 1; i < n-1; i++) {
+				axioms = newGrid[i][j].getAxiomSet();
+				std::cout << "[INFO] (" << i << "," << j << ") ";
+				for (Axiom a : axioms) {
+					std::cout << a.getValue() << ":" << a.getImpulse(0) << "," << a.getImpulse(1) << "," << a.getImpulse(2) << "," << a.getImpulse(3) << "; ";
+				}
+				std::cout << " | " << newGrid[i][j].is_inconsistent();
+				std::cout << std::endl;
+			}
+		}*/
 		
 		for (int i = 0; i < n; i++) {
 			for (int j = 0; j < m; j++) {
@@ -262,19 +401,30 @@ std::string getAxiomType(Axiom axiom) {
 	}
 }
 
-void printGrid(Theory grid[][max_size], int n, int m, Axiom ax1, Axiom ax2) {
+void printGrid(Theory grid[][max_size], int n, int m, std::string v1, std::string v2) {
 	std::set<Axiom> axioms;
 	std::cout << std::endl;
+	bool bContinue;
 	for (int j = 0; j < m; j++) {
 		for (int i = 0; i < n; i++) {
 			axioms = grid[i][j].getAxiomSet();
-			if (axioms.find(boundary) != axioms.end()) {
-				std::cout << "X ";
-			} else if (axioms.find(ax1) != axioms.end()) {
-				std::cout << "1 ";
-			} else if (axioms.find(ax2) != axioms.end()) {
-				std::cout << "2 ";
-			} else {
+			bContinue = 0;
+			for (Axiom a : axioms) {
+				if (a == boundary) {
+					std::cout << "X ";
+					bContinue = 1;
+					break;
+				} else if (a.getValue() == v1) {
+					std::cout << "1 ";
+					bContinue = 1;
+					break;
+				} else if (a.getValue() == v2) {
+					std::cout << "2 ";
+					bContinue = 1;
+					break;
+				}
+			}
+			if (!bContinue) {
 				std::cout << "0 ";
 			}
 		}
