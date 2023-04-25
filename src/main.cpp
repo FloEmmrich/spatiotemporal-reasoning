@@ -19,6 +19,8 @@ const int max_size = 10; // maximum column size for grid array
 // FUNCTION PROTOTYPES //
 
 std::string getAxiomType(Axiom);
+std::set<Axiom> getRuleBody(Axiom);
+Axiom getRuleHead(Axiom);
 void printGrid(Theory[][max_size], int, int, std::string, std::string);
 
 
@@ -67,6 +69,12 @@ class Axiom {
 					impulse[i]--;
 				}
 			}
+		}
+		std::set<Axiom> getBody() const {
+			return getRuleBody(Axiom(value));
+		}
+		Axiom getHead() const {
+			return getRuleHead(Axiom(value));
 		}
 		int getImpulse(int dir) const {
 			return impulse[dir];
@@ -119,7 +127,7 @@ class Axiom {
 			return std::tie(l.type, l.value) < std::tie(r.type, r.value);
 		}
 	private:
-		const std::string types[4] = {"BOUND","NEG","PROP","UNDEF"};
+		const std::string types[5] = {"BOUND","NEG","PROP","RULE","UNDEF"};
 		std::string value;
 		std::string type;
 		int impulse[4];
@@ -149,6 +157,43 @@ class Theory {
 				}
 			}
 		}
+		void fwdChaining() {
+			std::set<Axiom> props = std::set<Axiom>();
+			std::set<Axiom> rules = std::set<Axiom>();
+			for (Axiom a : axioms) {
+				if (a.getType() == "PROP" || a.getType() == "NEG") {
+					props.insert(a);
+				} else if (a.getType() == "RULE") {
+					rules.insert(a);
+				}
+			}
+			std::set<Axiom> body;
+			Axiom head;
+			bool infer;
+			bool change;
+			std::pair<std::set<Axiom>::iterator,bool> inserted;
+			do {
+				change = 0;
+				for (Axiom r : rules) {
+					body = r.getBody();
+					infer = 1;
+					for (Axiom b : body) {
+						if (props.find(b) == props.end()) {
+							infer = 0;
+							break;
+						}
+					}
+					if (infer) {
+						head = r.getHead();
+						if (head.getType() == "PROP" || head.getType() == "NEG") {
+							addAxiom(head);
+							inserted = props.insert(head);
+							change = inserted.second;
+						}
+					}
+				}
+			} while (change);
+		}
 		bool is_boundary() const {
 			return bBoundary;
 		}
@@ -176,6 +221,12 @@ class Theory {
 		}
 		void removeAxiom(Axiom a) {
 			axioms.erase(a);
+		}
+		friend bool operator==(const Theory& l, const Theory& r) { // might not be accurate
+			return l.bBoundary == r.bBoundary && l.axioms == r.axioms;
+		}
+		friend bool operator!=(const Theory& l, const Theory& r) {
+			return !(l == r);
 		}
 	private:
 		bool bBoundary;
@@ -222,9 +273,6 @@ int main() {
 	
 	File.close();
 	
-	//Axiom phi("phi");
-	//grid[n/2][m/2].addAxiom(phi);
-	
 	std::cout << "\nInit:\n";
 	printGrid(grid, n, m, "psi", "NOT(psi)");
 	
@@ -240,6 +288,7 @@ int main() {
 	std::set<Axiom> neighborAxioms;
 	std::queue<int> inconsistent;
 	bool bContained;
+	bool bChange;
 	for (int k = 1; k <= steps; k++) {
 		std::cout << "Step " << k << ":\n";
 		for (int j = 1; j < m-1; j++) {
@@ -349,6 +398,7 @@ int main() {
 		
 		for (int j = 1; j < m-1; j++) {
 			for (int i = 1; i < n-1; i++) {
+				newGrid[i][j].fwdChaining();
 				if (newGrid[i][j].is_inconsistent()) {
 					newGrid[i][j] = Theory();
 				}
@@ -369,12 +419,29 @@ int main() {
 			}
 		}*/
 		
+		bChange = 0;
 		for (int i = 0; i < n; i++) {
 			for (int j = 0; j < m; j++) {
+				if (grid[i][j] != newGrid[i][j]) {
+					bChange = 1;
+				}
 				grid[i][j] = newGrid[i][j];
 			}
 		}
+		if (!bChange) {
+			break;
+		}
 	}
+	
+	/*Axiom rule = Axiom("phi:-psi,NOT(a)");
+	std::set<Axiom> body = getRuleBody(rule);
+	std::cout << "[INFO] Type: " << rule.getType() << ".\n";
+	std::cout << "[INFO] Head: " << getRuleHead(rule) << ".\n";
+	std::cout << "[INFO] Body: ";
+	for (Axiom a : body) {
+		std::cout << a.getValue() << " "; 
+	}
+	std::cout << std::endl;*/
 	
 	return 0;
 }
@@ -387,6 +454,7 @@ std::string getAxiomType(Axiom axiom) {
 	if (type != "UNDEF") {
 		return type;
 	}
+	
 	std::string value = axiom.getValue();
 	if (value.empty()) {
 		return "UNDEF";
@@ -394,11 +462,54 @@ std::string getAxiomType(Axiom axiom) {
 		return "BOUND";
 	} else if (value.substr(0,4) == "NOT(" && value.back() == ')') {
 		return "NEG";
+	} 
+	
+	std::size_t found = value.find(":-", 0, 2);
+	if (found != std::string::npos && found > 0) {
+		return "RULE";
 	} else if (value.find("()") == std::string::npos) {
 		return "PROP";
-	} else {
-		return "UNDEF";
 	}
+	
+	return "UNDEF";
+}
+
+std::set<Axiom> getRuleBody(Axiom axiom) {
+	if (axiom.getType() != "RULE") {
+		return std::set<Axiom>();
+	}
+	std::string rule = axiom.getValue();
+	std::size_t found = rule.find(":-", 0, 2);
+	rule = rule.substr(found+2, std::string::npos);
+	if (rule == "") {
+		return std::set<Axiom>();
+	}
+	std::set<Axiom> body = std::set<Axiom>();
+	Axiom prop;
+	found = rule.find_last_of(",");
+	while (found != std::string::npos) {
+		prop = Axiom(rule.substr(found+1, std::string::npos));
+		if (prop.getType() == "PROP" || prop.getType() == "NEG") {
+			body.insert(prop);
+		}
+		rule = rule.erase(found, std::string::npos);
+		found = rule.find_last_of(",");
+	}
+	prop = Axiom(rule);
+	if (prop.getType() == "PROP" || prop.getType() == "NEG") {
+			body.insert(prop);
+	}
+	return body;
+}
+
+Axiom getRuleHead(Axiom axiom) {
+	if (axiom.getType() != "RULE") {
+		return axiom.getValue();
+	}
+	std::string rule = axiom.getValue();
+	std::size_t found = rule.find(":-", 0, 2);
+	rule.erase(found, std::string::npos);
+	return Axiom(rule);
 }
 
 void printGrid(Theory grid[][max_size], int n, int m, std::string v1, std::string v2) {
