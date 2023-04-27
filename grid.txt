@@ -1,9 +1,0 @@
-10	10
-1	1	psi
-8	8	psi
-8	1	NOT(psi)
-1	8	NOT(psi)
-4	4	BOUNDARY
-5	5 	BOUNDARY
-5	4	psi:-NOT(psi)
-4	5	psi:-NOT(psi)
