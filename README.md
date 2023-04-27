@@ -4,7 +4,7 @@ We initialize a grid of theories by adding propositional axioms (atomic proposit
 
 There is a special proposition which states that a theory is a boundary, i.e. it does neither receive nor transmit axioms. The boundary of the grid is automatically assigned to be theories with the boundary proposition.
 
-The initialization is read from ``grid.txt`` in the following format:
+The initialization is read from a file provided as a command-line argument. The file is of the following format:
 ```
 <number of columns> <number of rows>
 <x_1> <y_1> <Axiom>
