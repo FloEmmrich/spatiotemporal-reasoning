@@ -1,9 +1,12 @@
 #include <iostream>
+#include <iterator>
 #include <fstream>
 #include <queue>
 #include <set>
 #include <string>
+#include <sys/stat.h>
 #include <tuple>
+#include <vector>
 
 // CLASS PROTOTYPES //
 
@@ -18,6 +21,7 @@ const int max_size = 10; // maximum column size for grid array
 
 // FUNCTION PROTOTYPES //
 
+inline bool file_exists(const std::string&); 
 std::string getAxiomType(Axiom);
 std::set<Axiom> getRuleBody(Axiom);
 Axiom getRuleHead(Axiom);
@@ -241,12 +245,28 @@ const Axiom boundary("BOUNDARY");
 
 // MAIN //
 
-int main() {
+int main(int argc, char* argv[]) {
+	std::string filename;
+	if (argc != 2) {
+		filename = "./grid.txt";
+	} else {
+		std::vector<std::string> args (2);
+		std::copy(argv, argv+2, args.begin());
+		filename = args[1];
+	}
+	
+	if (!file_exists(filename)) {
+		std::cerr << "[ERROR] File \"" << filename << "\" does not exist.\n";
+		throw 300;
+	}
+
+	std::cout << "[INFO] Reading from \"" << filename << "\".\n\n";
+	
 	const int steps = 15;
 	
 	int n, m;
 	std::string line;
-	std::ifstream File("../grid.txt");
+	std::ifstream File(filename);
 	File >> n >> m;
 	std::cout << "Grid size: " << n << " x " << m << "." << std::endl;
 	
@@ -448,6 +468,11 @@ int main() {
 
 
 // FUNCTIONS //
+
+inline bool file_exists(const std::string& name) {
+  struct stat buffer;   
+  return (stat (name.c_str(), &buffer) == 0); 
+}
 
 std::string getAxiomType(Axiom axiom) {
 	std::string type = axiom.getType();
